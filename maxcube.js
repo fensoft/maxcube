@@ -418,6 +418,9 @@ function decodeDevice (payload) {
     case EQ3MAX_DEV_TYPE_THERMOSTAT:
       return decodeDeviceThermostat.call(this, payload);
       break;
+    case EQ3MAX_DEV_TYPE_THERMOSTAT_PLUS:
+      return decodeDeviceThermostat.call(this, payload);
+      break;
     default:
       log('Decoding device of type ' + this.devices[rf_address].devicetype + ' not yet implemented.');
   }
