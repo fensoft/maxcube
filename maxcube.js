@@ -421,11 +421,25 @@ function decodeDevice (payload) {
     case EQ3MAX_DEV_TYPE_THERMOSTAT_PLUS:
       return decodeDeviceThermostat.call(this, payload);
       break;
+    case  EQ3MAX_DEV_TYPE_SHUTTER_CONTACT:
+      return deviceDeviceShutterContact.call(this, payload);
+      break;
     default:
       log('Decoding device of type ' + this.devices[rf_address].devicetype + ' not yet implemented.');
   }
 
   return {rf_address: rf_address};
+}
+
+function deviceDeviceShutterContact(payload){
+  var data = '':
+  data = padLeft(payload[6].toString(2), 8);
+  var deviceStatus = {
+    rf_address: payload.slice(1, 4).toString('hex'),
+    state: parseInt(data.substr(6, 1)) ? 'open' : 'closed',
+    battery: parseInt(data.substr(0, 1)) ? 'low' : 'ok'
+  }
+  return deviceStatus;
 }
 
 function decodeDeviceThermostat (payload) {
