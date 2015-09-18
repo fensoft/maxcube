@@ -16,6 +16,11 @@ var EQ3MAX_DEV_TYPE_WALLTHERMOSTAT = 3;
 var EQ3MAX_DEV_TYPE_SHUTTER_CONTACT = 4;
 var EQ3MAX_DEV_TYPE_PUSH_BUTTON = 5;
 
+var EQ3MAX_DEV_MODE_AUTO = 0;
+var EQ3MAX_DEV_MODE_MANU = 1;
+var EQ3MAX_DEV_MODE_VACATION = 2;
+var EQ3MAX_DEV_MODE_BOOST = 3;
+
 function padLeft(nr, n, str){
   return Array(n-String(nr).length+1).join(str||'0')+nr;
 }
@@ -414,6 +419,8 @@ function doHeartbeat (callback) {
 
 function decodeDevice (payload) {
   var rf_address = payload.slice(1, 4).toString('hex');
+  if (!this.devices[rf_address])
+      return {data: payload.slice(4, 1+parseInt(payload.slice(0, 1).toString('hex'), 16)).toString('hex'), rf_address: rf_address};
   switch (this.devices[rf_address].devicetype) {
     case EQ3MAX_DEV_TYPE_THERMOSTAT:
       return decodeDeviceThermostat.call(this, payload);
@@ -424,6 +431,9 @@ function decodeDevice (payload) {
     case  EQ3MAX_DEV_TYPE_SHUTTER_CONTACT:
       return deviceDeviceShutterContact.call(this, payload);
       break;
+    case  EQ3MAX_DEV_TYPE_WALLTHERMOSTAT:
+      return decodeDeviceWallThermostat.call(this, payload);
+      break;
     default:
       log('Decoding device of type ' + this.devices[rf_address].devicetype + ' not yet implemented.');
   }
@@ -432,7 +442,7 @@ function decodeDevice (payload) {
 }
 
 function deviceDeviceShutterContact(payload){
-  var data = '':
+  var data = ''
   data = padLeft(payload[6].toString(2), 8);
   var deviceStatus = {
     rf_address: payload.slice(1, 4).toString('hex'),
@@ -440,6 +450,62 @@ function deviceDeviceShutterContact(payload){
     battery: parseInt(data.substr(0, 1)) ? 'low' : 'ok'
   }
   return deviceStatus;
+}
+
+function messageState(mesg, bits) {
+/* byte 5 from http://www.domoticaforum.eu/viewtopic.php?f=66&t=6654
+5          1  12          bit 4     Valid              0=invalid;1=information provided is valid
+                          bit 3     Error              0=no; 1=Error occurred
+                          bit 2     Answer             0=an answer to a command,1=not an answer to a command
+                          bit 1     Status initialized 0=not initialized, 1=yes
+                               
+                          12  = 00010010b
+                              = Valid, Initialized
+*/
+	mesg.initialized = !!(bits & (1 << 1));
+	mesg.fromCmd = !!(bits & (1 << 2));
+	mesg.error = !!(bits & (1 << 3));
+	mesg.valid = !!(bits & (1 << 4));
+}
+
+function deviceState(dev, bits) {
+/* byte 6 from http://www.domoticaforum.eu/viewtopic.php?f=66&t=6654
+6       1     1A          bit 7     Battery       1=Low
+                          bit 6     Linkstatus    0=OK,1=error
+                          bit 5     Panel         0=unlocked,1=locked
+                          bit 4     Gateway       0=unknown,1=known
+                          bit 3     DST setting   0=inactive,1=active
+                          bit 2     Not used
+                          bit 1,0   Mode         00=auto/week schedule
+                                                 01=Manual
+                                                 10=Vacation
+                                                 11=Boost   
+                          1A  = 00011010b
+                              = Battery OK, Linkstatus OK, Panel unlocked, Gateway known, DST active, Mode Vacation.
+
+*/
+	switch (bits & 0x3) {
+		case EQ3MAX_DEV_MODE_AUTO: dev.mode = "AUTO"; break;
+		case EQ3MAX_DEV_MODE_MANU: dev.mode = "MANU"; break;
+		case EQ3MAX_DEV_MODE_VACATION: dev.mode = "VACATION"; break;
+		case EQ3MAX_DEV_MODE_BOOST: dev.mode = "BOOST"; break;
+	}
+	dev.dst_active = !!(bits & (1 << 3));
+	dev.gateway_known = !!(bits & (1 << 4));
+	dev.panel_locked = !!(bits & (1 << 5));
+	dev.link_error = !!(bits & (1 << 6));
+	dev.battery_low = !!(bits & (1 << 7));
+}
+
+function decodeDeviceWallThermostat (payload) {
+	var deviceStatus = {
+		rf_address: payload.slice(1, 4).toString('hex'),
+	};
+	messageState(deviceStatus, payload[5]);
+	deviceState(deviceStatus, payload[6]);
+	deviceStatus.setpoint = ((payload[8] & 0x7F) / 2); //7 bit
+    deviceStatus.temp = ((payload[8] & (1 << 7))?25.5:0) + payload[12] / 10; //if 8th bit = 1 then 25.5+
+	return deviceStatus;
 }
 
 function decodeDeviceThermostat (payload) {
