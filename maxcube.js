@@ -133,11 +133,13 @@ MaxCube.prototype.doBoost = function(rf_address, temperature) {
   return setTemperature.call(this, rf_address, 'BOOST', temperature);
 };
 MaxCube.prototype.setTemperature = function(rf_address, temperature) {
-  this.devicesStatus[rf_address].setpoint_user = temperature;
+  if (this.devicesStatus[rf_address])
+    this.devicesStatus[rf_address].setpoint_user = temperature;
   return setTemperature.call(this, rf_address, 'MANUAL', temperature);
 };
 MaxCube.prototype.setVacationTemperature = function(rf_address, temperature, untilDate) {
-  this.devicesStatus[rf_address].setpoint_user = temperature;
+  if (this.devicesStatus[rf_address])
+    this.devicesStatus[rf_address].setpoint_user = temperature;
   return setTemperature.call(this, rf_address, 'VACATION', temperature, untilDate);
 };
 
@@ -396,7 +398,9 @@ function setTemperature (rfAdress, mode, temperature, untilDate) {
     var reqTempHex = parseInt(reqTempBinary, 2).toString(16);
   }
 
-  var room_id = ("00" + this.devices[rfAdress].room_id).substr(-2);
+  var room_id = "00";
+  if (this.devices[rfAdress])
+    room_id = ("00" + this.devices[rfAdress].room_id).substr(-2);
 
   var payload = new Buffer('000440000000' + rfAdress + room_id + reqTempHex + date_until + time_until, 'hex').toString('base64');
   var data = 's:' + payload + '\r\n';
