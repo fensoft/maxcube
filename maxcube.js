@@ -601,9 +601,11 @@ function decodeDeviceThermostat (payload) {
     return deviceStatus;
 }
 
-function log (message) {
+MaxCube.prototype.log = function(message) {
   fs.appendFile('log_maxcube.txt', '[' + moment().format() + '] ' + message + "\n");
 }
-
+function log (message) {
+  MaxCube.log(message);
+}
 
 module.exports = MaxCube;
