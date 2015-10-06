@@ -262,8 +262,10 @@ function parseCommandConfiguration (payload) {
   00         1  D2          Length of data: D2 = 210(decimal) = 210 bytes
   01         3  003508      RF address
   04         1  01          Device Type
-  05         3  0114FF      ?
+  05         3  0114FF      Room ID, Firmware version, Test Result
   08        10  IEQ0109125  Serial Number
+  
+  //for EQ3MAX_DEV_TYPE_THERMOSTAT
   18         1  28          Comfort Temperature
   19         1  28          Eco Temperature
   20         1  3D          MaxSetPointTemperature
@@ -286,26 +288,72 @@ function parseCommandConfiguration (payload) {
   27         1  FF          Maximum Valve setting; *(100/255) to get in %
   1C         1  00          Valve Offset ; *(100/255) to get in %
   1D         ?  44 48 ...   Weekly program (see The weekly program)
+  
+  //for EQ3MAX_DEV_TYPE_WALLTHERMOSTAT
+ x12   1    Comfort Temperature       in degrees celsius * 2
+ x13   1    Eco Temperature           in degrees celsius * 2
+ x14   1    Max Set Point Temperature in degrees celsius * 2
+ x15   1    Min Set Point Temperature in degrees celsius * 2
+ x1d   182  Weekly Program            Schedule of 26 bytes for
+                                    each day starting with
+                                    Saturday. Each schedule
+                                    consists of 13 words
+                                    (2 bytes) e.g. set points.
+                                    1 set point consist of
+                                    7 MSB bits is temperature
+                                      set point (in degrees * 2)
+                                    9 LSB bits is until time
+                                      (in minutes * 5)
+ xcc   3    Unknown
   */
 
   var payloadArr = payload.split(",");
   var rf_address = payloadArr[0].slice(0, 6).toString('hex');
 
   var decodedPayload = new Buffer(payloadArr[1], 'base64');
+  log(decodedPayload.toString('hex'));
   var length = decodedPayload[0];
+  log(length);
+  var type = decodedPayload[4];
+  var dataObj;
 
-  var dataObj = {
-    rf_address: decodedPayload.slice(1, 4).toString('hex'),
-    device_type: decodedPayload[4],
-    serial_number: String.fromCharCode.apply(null, decodedPayload.slice(8, 18)),
-    comfort_temp: decodedPayload[18] / 2,
-    eco_temp: decodedPayload[19] / 2,
-    max_setpoint_temp: decodedPayload[20] / 2,
-    min_setpoint_temp: decodedPayload[21] / 2,
-    temp_offset: (decodedPayload[22] / 2) - 3.5,
-    max_valve: decodedPayload[27] * (100/255)
-  };
-
+  switch(type) {
+    case EQ3MAX_DEV_TYPE_THERMOSTAT:
+    case EQ3MAX_DEV_TYPE_THERMOSTAT_PLUS:
+      dataObj = {
+        rf_address: decodedPayload.slice(1, 4).toString('hex'),
+        device_type: decodedPayload[4],
+        serial_number: String.fromCharCode.apply(null, decodedPayload.slice(8, 18)),
+        comfort_temp: decodedPayload[18] / 2,
+        eco_temp: decodedPayload[19] / 2,
+        max_setpoint_temp: decodedPayload[20] / 2,
+        min_setpoint_temp: decodedPayload[21] / 2,
+        temp_offset: (decodedPayload[22] / 2) - 3.5,
+        max_valve: decodedPayload[27] * (100/255)
+      };
+      break;
+    case EQ3MAX_DEV_TYPE_WALLTHERMOSTAT:
+      dataObj = {
+        rf_address: decodedPayload.slice(1, 4).toString('hex'),
+        device_type: decodedPayload[4],
+        serial_number: String.fromCharCode.apply(null, decodedPayload.slice(8, 18)),
+        comfort_temp: decodedPayload[18] / 2,
+        eco_temp: decodedPayload[19] / 2,
+        max_setpoint_temp: decodedPayload[20] / 2,
+        min_setpoint_temp: decodedPayload[21] / 2
+      };
+      break;
+    case EQ3MAX_DEV_TYPE_CUBE:
+    case EQ3MAX_DEV_TYPE_SHUTTER_CONTACT:
+      dataObj = {
+        rf_address: decodedPayload.slice(1, 4).toString('hex'),
+        device_type: decodedPayload[4],
+        serial_number: String.fromCharCode.apply(null, decodedPayload.slice(8, 18))
+      };
+      break;
+    default:
+      break;
+  }
   this.emit('configurationUpdate', dataObj);
 }
 
