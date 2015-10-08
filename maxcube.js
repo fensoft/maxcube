@@ -132,6 +132,12 @@ MaxCube.prototype.close = function() {
 MaxCube.prototype.doBoost = function(rf_address, temperature) {
   return setTemperature.call(this, rf_address, 'BOOST', temperature);
 };
+MaxCube.prototype.send = function(data) {
+  var payload = new Buffer(data, 'hex').toString('base64');
+  var data = 's:' + payload + '\r\n';
+  return send.call(this, data);
+};
+
 MaxCube.prototype.setTemperature = function(rf_address, temperature) {
   if (this.devicesStatus[rf_address])
     this.devicesStatus[rf_address].setpoint_user = temperature;
