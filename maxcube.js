@@ -29,6 +29,7 @@ function padLeft(nr, n, str){
 function MaxCube(ip, port) {
   this.ip = ip;
   this.port = port;
+  this.debug = 0;
 
   this.isConnected = false;
   this.busy = false;
@@ -49,7 +50,10 @@ function MaxCube(ip, port) {
     var dataStr = dataBuff.toString('utf-8');
     var commandType = dataStr.substr(0, 1);
     var payload = dataStr.substring(2, dataStr.length - 2);
-    log('Data received: ' + commandType);
+    if (this.debug == 0)
+      log('Data received: ' + commandType);
+    else
+      log('Data received: ' + commandType + ' [' + payload + ']');
 
     var dataObj = parseCommand.call(self, commandType, payload);
 
