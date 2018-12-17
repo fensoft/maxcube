@@ -3,6 +3,7 @@ var schedule = require('node-schedule');
 var moment = require('moment');
 var fs = require('fs');
 var util = require('util');
+var sleep = require('sleep');
 var EventEmitter = require('events').EventEmitter;
 
 var updateIntervalMins = 15;
@@ -43,23 +44,50 @@ function MaxCube(ip, port) {
   this.devicesStatus = {};
 
   this.client = new net.Socket();
-
   var self = this;
+  this.servercmds = []
+  this.server = net.createServer(function(socket) {
+    log("Proxy: New socket")
+    for (var index in self.servercmds) {
+      var line = self.servercmds[index];
+      log("Proxy Send: " + line)
+      try { socket.write(line + "\r\n") } catch (err) { }
+    }
+    socket.on('error', function (err) {
+    });
+    socket.on('data', function(data){
+      log("Proxy Recv: " + data.toString('utf-8').replace("\n", "").replace("\r", ""))
+      try { if (data.toString('utf-8').replace("\n", "").replace("\r", "") != "q:") self.client.write(data); } catch (err) { }
+    });
+    self.client.on('data', function(data) {
+      log("Proxy Send: " + data.toString('utf-8').replace("\n", "").replace("\r", ""))
+      try { socket.write(data); } catch (err) { }
+    });
+  });
+  //this.server.listen(port);
 
   this.client.on('data', function(dataBuff) {
-    var dataStr = dataBuff.toString('utf-8');
-    var commandType = dataStr.substr(0, 1);
-    var payload = dataStr.substring(2, dataStr.length - 2);
-    if (this.debug == 0)
-      log('Data received: ' + commandType);
-    else
-      log('Data received: ' + commandType + ' [' + payload + ']');
+    lines = dataBuff.toString('utf-8').replace("\r", "").split("\n")
+    for (var index in lines) {
+      var line = lines[index].replace("\r", "").replace("\n", "")
+      if (line != "") {
+        var commandType = line.substr(0, 1);
+        var payload = line.substring(2, line.length);
+        if (this.debug == 0)
+          log('Data received: ' + commandType);
+        else
+          log('Data received: ' + commandType + ' [' + payload + ']');
 
-    var dataObj = parseCommand.call(self, commandType, payload);
+        var dataObj = parseCommand.call(self, commandType, payload);
 
-    if (self.callback != undefined && self.callback instanceof Function) {
-      self.callback.call(self, dataObj);
-      self.callback = undefined;
+        if (self.callback != undefined && self.callback instanceof Function) {
+          self.callback.call(self, dataObj);
+          self.callback = undefined;
+        }
+        if (commandType == "H" || commandType == "M") {
+          self.servercmds.push(line);
+        }
+      }
     }
     self.busy = false;
   });
@@ -111,7 +139,7 @@ function MaxCube(ip, port) {
     doHeartbeat.call(self, function (dataObj) {});
   });
 
-  log('MaxCube initialized');
+  log('MaxCube initialized on ' + this.ip);
 
 }
 
@@ -136,6 +164,11 @@ MaxCube.prototype.close = function() {
 MaxCube.prototype.doBoost = function(rf_address, temperature) {
   return setTemperature.call(this, rf_address, 'BOOST', temperature);
 };
+
+MaxCube.prototype.doAuto = function(rf_address, temperature) {
+  return setTemperature.call(this, rf_address, 'AUTO', temperature);
+};
+
 MaxCube.prototype.send = function(data) {
   var payload = new Buffer(data, 'hex').toString('base64');
   var data = 's:' + payload + '\r\n';
@@ -162,8 +195,8 @@ function send (dataStr, callback) {
       this.callback = undefined;
     }
 
-    this.client.write(dataStr);
     log('Data sent (' + this.dutyCycle + '%, ' + this.memorySlots + '): ' + dataStr.substr(0,1));
+    this.client.write(dataStr);
   }
 }
 
@@ -266,6 +299,8 @@ function parseCommandMetadata (payload) {
 }
 
 function parseCommandConfiguration (payload) {
+  if (payload.length == 0)
+    return;
   /*
   Start Length  Value       Description
   ==================================================================
@@ -321,9 +356,9 @@ function parseCommandConfiguration (payload) {
   var rf_address = payloadArr[0].slice(0, 6).toString('hex');
 
   var decodedPayload = new Buffer(payloadArr[1], 'base64');
-  log(decodedPayload.toString('hex'));
+  //log(decodedPayload.toString('hex'));
   var length = decodedPayload[0];
-  log(length);
+  //log(length);
   var type = decodedPayload[4];
   var dataObj;
 
@@ -448,7 +483,8 @@ function setTemperature (rfAdress, mode, temperature, untilDate) {
   }
 
   if (modeBin == '00') {
-    var reqTempHex = (0).toString(16);
+    var reqTempBinary = modeBin + padLeft(((temperature || 0) * 2).toString(2), 6);
+    var reqTempHex = padLeft(parseInt(reqTempBinary, 2).toString(16), 2);
   } else {
     // leading zero padding
     var reqTempBinary = modeBin + ("000000" + (temperature * 2).toString(2)).substr(-6);
@@ -464,7 +500,7 @@ function setTemperature (rfAdress, mode, temperature, untilDate) {
   var data = 's:' + payload + '\r\n';
   send.call(this, data, callback);
 
-  log('Data sent: ' + data);
+  log('Data sent: s:' + payload);
 };
 
 function doHeartbeat (callback) {
@@ -497,7 +533,7 @@ function decodeDevice (payload) {
       return decodeDeviceWallThermostat.call(this, payload);
       break;
     default:
-      log('Decoding device of type ' + this.devices[rf_address].devicetype + ' not yet implemented.');
+      log('Decoding device of type ' + this.devices[rf_address].devicetype + ' not yet implemented:' + payload.toString('hex'));
   }
 
   return {rf_address: rf_address};
@@ -509,7 +545,7 @@ function deviceDeviceShutterContact(payload){
   var deviceStatus = {
     rf_address: payload.slice(1, 4).toString('hex'),
     state: parseInt(data.substr(6, 1)) ? 'open' : 'closed',
-    battery: parseInt(data.substr(0, 1)) ? 'low' : 'ok'
+    battery_low: parseInt(data.substr(0, 1)) ? true : false
   }
   return deviceStatus;
 }
@@ -548,7 +584,7 @@ function deviceState(dev, bits) {
 */
 	switch (bits & 0x3) {
 		case EQ3MAX_DEV_MODE_AUTO: dev.mode = "AUTO"; break;
-		case EQ3MAX_DEV_MODE_MANU: dev.mode = "MANU"; break;
+		case EQ3MAX_DEV_MODE_MANU: dev.mode = "MANUAL"; break;
 		case EQ3MAX_DEV_MODE_VACATION: dev.mode = "VACATION"; break;
 		case EQ3MAX_DEV_MODE_BOOST: dev.mode = "BOOST"; break;
 	}
